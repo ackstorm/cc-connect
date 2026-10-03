@@ -495,3 +495,47 @@ func TestSession_maybeAbsorbCurrentModeUpdate(t *testing.T) {
 		t.Fatalf("callback should have been fired with currentModeId=plan, got %+v ok=%v", last, ok)
 	}
 }
+
+// Regression: ACP's session/load response carries no sessionId (the client
+// keeps the one it sent), which is what OpenCode returns. The handshake must
+// keep the resumed id instead of falling back to session/new.
+func TestSession_handshake_loadResponseWithoutSessionID(t *testing.T) {
+	s, wResp, rReq := newTestSession(t, &fakeCallbacks{})
+	s.acpSessID = ""
+
+	methods := make(chan string, 4)
+	go func() {
+		sc := bufio.NewScanner(rReq)
+		for sc.Scan() {
+			var req struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			if json.Unmarshal(sc.Bytes(), &req) != nil || req.ID == nil {
+				continue
+			}
+			methods <- req.Method
+			result := `{}`
+			switch req.Method {
+			case "initialize":
+				result = `{"protocolVersion":1,"agentCapabilities":{"loadSession":true}}`
+			case "session/new":
+				result = `{"sessionId":"fresh"}`
+			}
+			_, _ = fmt.Fprintf(wResp, `{"jsonrpc":"2.0","id":%s,"result":%s}`+"\n", req.ID, result)
+		}
+	}()
+
+	if err := s.handshake("ses_old", ""); err != nil {
+		t.Fatalf("handshake: %v", err)
+	}
+	if got := s.CurrentSessionID(); got != "ses_old" {
+		t.Fatalf("session id = %q, want ses_old (resumed)", got)
+	}
+	close(methods)
+	for m := range methods {
+		if m == "session/new" {
+			t.Fatal("session/new called after a successful session/load")
+		}
+	}
+}

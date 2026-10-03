@@ -219,7 +219,12 @@ func (s *acpSession) handshake(resumeSessionID string, authMethod string) error 
 				SessionID string         `json:"sessionId"`
 				Modes     *acpModesBlock `json:"modes"`
 			}
-			if json.Unmarshal(loadRes, &lr) == nil && lr.SessionID != "" {
+			if json.Unmarshal(loadRes, &lr) == nil {
+				// ACP's LoadSessionResponse has no sessionId (OpenCode omits it):
+				// the loaded session is the one we asked for.
+				if lr.SessionID == "" {
+					lr.SessionID = resumeSessionID
+				}
 				s.setACPSessionID(lr.SessionID)
 				s.absorbModes(lr.Modes)
 				return nil
