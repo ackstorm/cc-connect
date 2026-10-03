@@ -879,3 +879,34 @@ func TestLookupEffectiveBinding_NoIsolationUnbindsMissing(t *testing.T) {
 		t.Errorf("expected missing workspace binding to be unbound without isolation, got %+v", got)
 	}
 }
+
+// With a default workspace, a channel that has no binding and no
+// convention match (e.g. a Slack DM, which has no name) binds to it instead of
+// starting the workspace init flow.
+func TestMultiWorkspaceResolution_DefaultWorkspace(t *testing.T) {
+	baseDir := t.TempDir()
+	defaultDir := t.TempDir()
+	e := newTestEngineWithMultiWorkspace(t, baseDir)
+	e.SetDefaultWorkspace(defaultDir)
+	p := &mockChannelResolver{names: map[string]string{}} // name lookup fails, as for a DM
+
+	ws, _, err := e.resolveWorkspace(p, "D001")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := normalizeWorkspacePath(defaultDir)
+	if ws != want {
+		t.Fatalf("workspace = %q, want %q", ws, want)
+	}
+	b := e.workspaceBindings.Lookup("project:test", workspaceChannelKey(p.Name(), "D001"))
+	if b == nil || b.Workspace != want {
+		t.Fatalf("binding = %+v, want workspace %q", b, want)
+	}
+
+	// An explicit binding still wins over the default.
+	other := t.TempDir()
+	e.workspaceBindings.Bind("project:test", workspaceChannelKey(p.Name(), "D002"), "", normalizeWorkspacePath(other))
+	if ws, _, _ := e.resolveWorkspace(p, "D002"); ws != normalizeWorkspacePath(other) {
+		t.Fatalf("explicit binding overridden: got %q", ws)
+	}
+}

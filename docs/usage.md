@@ -1008,6 +1008,7 @@ type = "claudecode"
 
 - Channel name `#project-a` → auto-binds to `base_dir/project-a/`
 - Each channel has isolated sessions and agent state
+- With `default_workspace = "<dir>"`, a channel with no binding and no matching folder (for example a DM, which has no name) binds to `<dir>` instead of asking for a repo. `/workspace route` and `/workspace bind` still change it afterwards.
 
 ---
 

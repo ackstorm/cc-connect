@@ -467,6 +467,7 @@ type Engine struct {
 	multiWorkspace               bool
 	baseDir                      string
 	skipGit                      bool
+	defaultWorkspace             string // multi-workspace: bind unresolved channels here instead of the init flow
 	workspaceInitAllowLocalPaths bool
 	workspaceBindings            *WorkspaceBindingManager
 	workspacePool                *workspacePool
@@ -1040,6 +1041,12 @@ func (e *Engine) SetFilterExternalSessions(v bool) {
 
 func (e *Engine) SetWebSetupFunc(fn func() (int, string, bool, error)) { e.webSetupFunc = fn }
 func (e *Engine) SetWebStatusFunc(fn func() string)                    { e.webStatusFunc = fn }
+
+// SetDefaultWorkspace makes channels with no binding and no convention match
+// bind to dir instead of starting the workspace init flow.
+func (e *Engine) SetDefaultWorkspace(dir string) {
+	e.defaultWorkspace = dir
+}
 
 func (e *Engine) SetSkipGit(skipGit bool) {
 	e.skipGit = skipGit
@@ -17191,20 +17198,30 @@ func (e *Engine) resolveWorkspace(p Platform, channelID string) (string, string,
 		}
 	}
 
-	if channelName == "" {
-		return "", "", nil
+	// Step 3: Convention match — check if base_dir/<channel-name> exists
+	if channelName != "" {
+		candidate := filepath.Join(e.baseDir, channelName)
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			// Auto-bind
+			projectKey := "project:" + e.name
+			normalized := normalizeWorkspacePath(candidate)
+			e.workspaceBindings.Bind(projectKey, channelKey, channelName, normalized)
+			slog.Info("workspace auto-bound by convention",
+				"channel", channelName, "workspace", normalized)
+			return normalized, channelName, nil
+		}
 	}
 
-	// Step 3: Convention match — check if base_dir/<channel-name> exists
-	candidate := filepath.Join(e.baseDir, channelName)
-	if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-		// Auto-bind
-		projectKey := "project:" + e.name
-		normalized := normalizeWorkspacePath(candidate)
-		e.workspaceBindings.Bind(projectKey, channelKey, channelName, normalized)
-		slog.Info("workspace auto-bound by convention",
-			"channel", channelName, "workspace", normalized)
-		return normalized, channelName, nil
+	// Step 4: Default workspace, if configured.
+	if e.defaultWorkspace != "" {
+		if info, err := os.Stat(e.defaultWorkspace); err == nil && info.IsDir() {
+			normalized := normalizeWorkspacePath(e.defaultWorkspace)
+			e.workspaceBindings.Bind("project:"+e.name, channelKey, channelName, normalized)
+			slog.Info("workspace auto-bound to default_workspace",
+				"channel", channelKey, "workspace", normalized)
+			return normalized, channelName, nil
+		}
+		slog.Warn("default_workspace is not a directory", "path", e.defaultWorkspace)
 	}
 
 	return "", channelName, nil

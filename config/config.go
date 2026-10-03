@@ -493,6 +493,10 @@ type ProjectConfig struct {
 	Mode    string `toml:"mode,omitempty"`     // "" or "multi-workspace"
 	BaseDir string `toml:"base_dir,omitempty"` // parent dir for workspaces
 	SkipGit *bool  `toml:"skip_git,omitempty"`
+	// DefaultWorkspace (multi-workspace) binds channels that have no binding
+	// and no base_dir/<channel-name> match to this directory, instead of
+	// asking for a repo. Useful for DMs, which have no channel name.
+	DefaultWorkspace string `toml:"default_workspace,omitempty"`
 	// WorkspaceInitAllowLocalPaths allows /workspace init and the conversational
 	// init flow to bind existing local directories. Default false keeps init
 	// limited to git URLs; use /workspace bind or /workspace route for explicit
@@ -722,6 +726,7 @@ func expandHomeInConfig(cfg *Config) {
 	for i := range cfg.Projects {
 		proj := &cfg.Projects[i]
 		proj.BaseDir = expandLeadingHome(proj.BaseDir, home)
+		proj.DefaultWorkspace = expandLeadingHome(proj.DefaultWorkspace, home)
 		if v, ok := proj.Agent.Options["work_dir"]; ok {
 			if s, ok := v.(string); ok {
 				proj.Agent.Options["work_dir"] = expandLeadingHome(s, home)

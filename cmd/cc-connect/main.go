@@ -468,6 +468,9 @@ func main() {
 			if proj.SkipGit != nil {
 				engine.SetSkipGit(*proj.SkipGit)
 			}
+			if proj.DefaultWorkspace != "" {
+				engine.SetDefaultWorkspace(proj.DefaultWorkspace)
+			}
 			slog.Info("multi-workspace mode enabled", "project", proj.Name, "base_dir", baseDir)
 		}
 

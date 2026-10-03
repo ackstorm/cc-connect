@@ -15,6 +15,7 @@ func TestExpandHomeInConfig_LoadsAndExpandsWorkDir(t *testing.T) {
 	content := `[[projects]]
 name = "tilde-test"
 base_dir = "~/projects"
+default_workspace = "~/projects/main"
 
 [projects.agent]
 type = "codex"
@@ -55,5 +56,9 @@ app_secret = "y"
 	wantBaseDir := filepath.Join(home, "projects")
 	if proj.BaseDir != wantBaseDir {
 		t.Errorf("base_dir = %q, want %q", proj.BaseDir, wantBaseDir)
+	}
+
+	if want := filepath.Join(home, "projects/main"); proj.DefaultWorkspace != want {
+		t.Errorf("default_workspace = %q, want %q", proj.DefaultWorkspace, want)
 	}
 }

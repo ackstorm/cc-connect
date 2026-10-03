@@ -740,6 +740,7 @@ level = "info" # debug, info, warn, error
 # skip_git = true # skip bind git repo, create a dir directly
 # base_dir = "~/workspace"
 # workspace_init_allow_local_paths = true  # Optional: allow /workspace init <local-dir>; default false keeps init git-URL only
+# default_workspace = "~"  # Optional: bind channels with no binding and no base_dir/<channel-name> match (e.g. DMs) here instead of asking for a repo
 #
 # [projects.agent]
 # type = "claudecode"
