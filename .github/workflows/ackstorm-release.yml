@@ -1,0 +1,42 @@
+# ackstorm fork: Linux binaries (ACP agent + Slack only, no web UI) attached
+# to a GitHub Release, installed in Coder workspaces with curl.
+# Cut a release: git tag v<upstream-base>-ackstorm.<n> && git push origin <tag>
+name: ackstorm release
+
+on:
+  push:
+    tags: ['v*-ackstorm.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./core/... ./agent/acp/... ./platform/slack/... ./config/...
+
+      - name: Build
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          for target in linux/amd64 linux/arm64; do
+            make release TARGET="$target" VERSION="$VERSION" AGENTS=acp PLATFORMS_INCLUDE=slack NO_WEB=1
+          done
+          cd dist && sha256sum cc-connect-* > checksums.txt
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          gh release create "$VERSION" dist/* --title "$VERSION" \
+            --notes "ackstorm fork build (ACP agent + Slack, no web UI). Patch list: reference/cc-connect-fork.md in ackstorm/ach-relay."
