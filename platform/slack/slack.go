@@ -318,7 +318,12 @@ func (p *Platform) handleEvent(evt socketmode.Event) {
 				// (assistantOrThreadTS): thread root in a thread, the message ts
 				// for a top-level channel message, and "" for a top-level DM —
 				// so DMs fall back to the user-scoped key and stay continuous.
+				// With session_scope=thread a top-level DM starts its own thread
+				// instead, so it shares a session with the replies under it.
 				threadTS := assistantOrThreadTS(ev)
+				if threadTS == "" && p.sessionScope == "thread" {
+					threadTS = ev.TimeStamp
+				}
 				sessionKey := p.buildSessionKey(ev.Channel, ev.User, threadTS)
 				ts := ev.TimeStamp
 

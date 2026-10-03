@@ -1,6 +1,13 @@
 package slack
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/slack-go/slack/slackevents"
+	"github.com/slack-go/slack/socketmode"
+
+	"github.com/chenhg5/cc-connect/core"
+)
 
 func TestNormalizeSessionScope(t *testing.T) {
 	cases := []struct {
@@ -76,5 +83,52 @@ func TestReconstructReplyCtx(t *testing.T) {
 	}
 	if _, err := p.ReconstructReplyCtx("telegram:123"); err == nil {
 		t.Error("ReconstructReplyCtx should reject non-slack keys")
+	}
+}
+
+// With session_scope=thread a top-level DM starts its own thread, like a
+// channel message does: its session key and reply thread are the message ts,
+// so the follow-ups in that thread land in the same session. Other scopes keep
+// replying top-level in DMs.
+func TestHandleEvent_DMThreadScope(t *testing.T) {
+	dm := func(ts, threadTS string) socketmode.Event {
+		return socketmode.Event{
+			Type: socketmode.EventTypeEventsAPI,
+			Data: slackevents.EventsAPIEvent{
+				Type: slackevents.CallbackEvent,
+				InnerEvent: slackevents.EventsAPIInnerEvent{Data: &slackevents.MessageEvent{
+					User: "U1", Channel: "D1", ChannelType: "im", TimeStamp: ts, ThreadTimeStamp: threadTS, Text: "hi",
+				}},
+			},
+		}
+	}
+	root, reply := freshTS(1), freshTS(2)
+	cases := []struct {
+		scope            string
+		wantKey, wantRTS string // for the top-level message; the reply must match
+	}{
+		{"thread", "slack:D1:t:" + root, root},
+		{"user", "slack:D1:U1", ""},
+	}
+	for _, c := range cases {
+		var got []*core.Message
+		p := &Platform{allowFrom: "*", sessionScope: c.scope, channelNameCache: map[string]string{"D1": "dm"}}
+		p.userNameCache.Store("U1", "Jim")
+		p.handler = func(_ core.Platform, m *core.Message) { got = append(got, m) }
+
+		p.handleEvent(dm(root, ""))
+		p.handleEvent(dm(reply, root))
+		if len(got) != 2 {
+			t.Fatalf("scope=%s: dispatched %d, want 2", c.scope, len(got))
+		}
+		if got[0].SessionKey != c.wantKey {
+			t.Errorf("scope=%s: top-level key = %q, want %q", c.scope, got[0].SessionKey, c.wantKey)
+		}
+		if rts := got[0].ReplyCtx.(replyContext).timestamp; rts != c.wantRTS {
+			t.Errorf("scope=%s: top-level reply thread = %q, want %q", c.scope, rts, c.wantRTS)
+		}
+		if c.scope == "thread" && got[1].SessionKey != got[0].SessionKey {
+			t.Errorf("scope=thread: thread reply key = %q, want %q", got[1].SessionKey, got[0].SessionKey)
+		}
 	}
 }
