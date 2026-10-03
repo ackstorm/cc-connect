@@ -196,6 +196,24 @@ func TestMapSessionUpdate_toolCall(t *testing.T) {
 	}
 }
 
+// OpenCode sends the final tool_call_update without a title; the opaque
+// toolCallId (it can embed a long encoded model id) must not become the label.
+func TestMapSessionUpdate_toolCallUpdateWithoutTitle(t *testing.T) {
+	params := json.RawMessage(`{
+		"sessionId": "s1",
+		"update": {
+			"sessionUpdate": "tool_call_update",
+			"toolCallId": "call_825346__thought__EtEDCs4DAWkUfRPv3TTQZNtfZXeSbvtonrCY",
+			"status": "completed",
+			"content": [{"type": "content", "content": {"type": "text", "text": "file body"}}]
+		}
+	}`)
+	evs := mapSessionUpdate("", params)
+	if len(evs) != 1 || evs[0].Type != core.EventToolResult || evs[0].ToolName != "tool" {
+		t.Fatalf("got %+v", evs)
+	}
+}
+
 func TestPickPermissionOptionID(t *testing.T) {
 	opts := []permissionOption{
 		{OptionID: "a", Kind: "allow_once"},

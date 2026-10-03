@@ -160,10 +160,9 @@ func mapToolCallUpdate(sessionID string, update json.RawMessage) []core.Event {
 	if err := json.Unmarshal(update, &u); err != nil {
 		return nil
 	}
+	// No title: label it "tool". The toolCallId is opaque (OpenCode's can embed
+	// a long encoded model id) and is not meant for display.
 	toolLabel := u.Title
-	if toolLabel == "" {
-		toolLabel = u.ToolCallID
-	}
 	if toolLabel == "" {
 		toolLabel = "tool"
 	}
