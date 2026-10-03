@@ -16494,3 +16494,105 @@ func TestProcessInteractiveEvents_StreamingCard_BareNoReply_Suppressed(t *testin
 		t.Fatalf("silent reply leaked NO_REPLY into the streaming card: %q", card.finalContent())
 	}
 }
+
+// orderedCardPlatform is a StreamingCardPlatform that logs, in order, each
+// card's finalized content and every plain message, so tests can check where
+// the answer lands relative to a permission prompt.
+type orderedCardPlatform struct {
+	stubPlatformEngine
+	mu    sync.Mutex
+	log   []string
+	cards int
+}
+
+type orderedCard struct {
+	p  *orderedCardPlatform
+	id int
+}
+
+func (c *orderedCard) Update(_ context.Context, _ string) error { return nil }
+func (c *orderedCard) Finalize(_ context.Context, content string) error {
+	c.p.mu.Lock()
+	defer c.p.mu.Unlock()
+	c.p.log = append(c.p.log, fmt.Sprintf("card%d: %s", c.id, content))
+	return nil
+}
+func (c *orderedCard) Failed() bool { return false }
+
+func (p *orderedCardPlatform) CreateStreamingCard(_ context.Context, _ any) (StreamingCard, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cards++
+	return &orderedCard{p: p, id: p.cards}, nil
+}
+
+func (p *orderedCardPlatform) Send(_ context.Context, _ any, content string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.log = append(p.log, "msg: "+content)
+	return nil
+}
+
+func (p *orderedCardPlatform) Reply(ctx context.Context, rctx any, content string) error {
+	return p.Send(ctx, rctx, content)
+}
+
+func (p *orderedCardPlatform) entries() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.log...)
+}
+
+// A permission prompt closes the turn's streaming card; what the agent says
+// after the user answers goes into a new card below the prompt, not back into
+// the card above it.
+func TestProcessInteractiveEvents_StreamingCard_AnswerAfterPermissionPrompt(t *testing.T) {
+	p := &orderedCardPlatform{stubPlatformEngine: stubPlatformEngine{n: "slack"}}
+	e := NewEngine("test", &stubAgent{}, []Platform{p}, "", LangEnglish)
+	key := "slack:user-card-perm"
+	session := e.sessions.GetOrCreateActive(key)
+	sess := newControllableSession("s-card-perm")
+	state := &interactiveState{agentSession: sess, platform: p, replyCtx: "ctx"}
+	e.interactiveStates[key] = state
+
+	done := make(chan struct{})
+	go func() {
+		e.processInteractiveEvents(state, session, e.sessions, key, "m-card-perm", time.Now(), nil, nil, state.replyCtx, 0)
+		close(done)
+	}()
+
+	sess.events <- Event{Type: EventText, Content: "Let me read it."}
+	sess.events <- Event{Type: EventPermissionRequest, RequestID: "r1", ToolName: "read", ToolInput: "/etc/hostname"}
+	deadline := time.Now().Add(2 * time.Second)
+	for !e.handlePendingPermission(p, &Message{SessionKey: key, ReplyCtx: "ctx"}, "allow", "") {
+		if time.Now().After(deadline) {
+			t.Fatal("permission request never became pending")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	sess.events <- Event{Type: EventText, Content: "The hostname is jcm."}
+	sess.events <- Event{Type: EventResult, Content: "Let me read it.The hostname is jcm.", Done: true}
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("processInteractiveEvents did not complete")
+	}
+
+	log := p.entries()
+	prompt, answer := -1, -1
+	for i, l := range log {
+		if strings.HasPrefix(l, "msg: ") && strings.Contains(l, "/etc/hostname") && prompt < 0 {
+			prompt = i
+		}
+		if strings.HasPrefix(l, "card") && strings.Contains(l, "The hostname is jcm.") {
+			answer = i
+		}
+	}
+	if prompt < 0 || answer < 0 {
+		t.Fatalf("missing prompt or answer in %q", log)
+	}
+	if answer < prompt || strings.HasPrefix(log[answer], "card1:") {
+		t.Fatalf("answer must land in a new card after the permission prompt, got %q", log)
+	}
+}

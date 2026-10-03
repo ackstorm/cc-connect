@@ -5232,6 +5232,9 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 	var cardToolCalls []cardToolEntry  // track tool calls for card content
 	var cardThinkingText string        // latest thinking text
 	var cardAnswerText strings.Builder // accumulated answer text
+	// cardReopened is set once a permission prompt has closed the first card:
+	// the replacement card holds only what was streamed after the prompt.
+	var cardReopened bool
 
 	if scp, ok := state.platform.(StreamingCardPlatform); ok {
 		if sc, err := scp.CreateStreamingCard(e.ctx, state.replyCtx); err != nil {
@@ -5865,10 +5868,22 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				continue
 			}
 
+			// Close the streaming card before the prompt so the rest of the
+			// turn renders below the prompt instead of back into this card.
+			cardClosed := false
+			if streamCard != nil && !streamCard.Failed() {
+				if body := cardAnswerText.String(); body != "" || len(cardToolCalls) > 0 || cardThinkingText != "" {
+					if err := streamCard.Finalize(e.ctx, buildCardContent(cardThinkingText, cardToolCalls, body)); err != nil {
+						slog.Warn("streaming card finalize before permission prompt failed", "error", err)
+					}
+				}
+				cardClosed = true
+			}
+
 			// Flush accumulated text segment before permission prompt
 			previewActive := sp.canPreview()
 			if len(textParts) > segmentStart {
-				if !previewActive {
+				if !previewActive && !cardClosed {
 					segment := strings.Join(textParts[segmentStart:], "")
 					if segment != "" {
 						for _, chunk := range SplitMessageCodeFenceAware(segment, maxPlatformMessageLen) {
@@ -5931,6 +5946,21 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			// preview so the post-resolution output opens a fresh streaming
 			// card and continues to update incrementally.
 			sp.unfreeze()
+
+			if cardClosed {
+				streamCard = nil
+				cardToolCalls = nil
+				cardThinkingText = ""
+				cardAnswerText.Reset()
+				cardReopened = true
+				if scp, ok := p.(StreamingCardPlatform); ok {
+					if sc, err := scp.CreateStreamingCard(e.ctx, replyCtx); err != nil {
+						slog.Warn("streaming card creation after permission prompt failed", "error", err)
+					} else {
+						streamCard = sc
+					}
+				}
+			}
 
 			// Restart idle timer after permission is resolved
 			if idleTimer != nil {
@@ -6195,6 +6225,9 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				// without leaking the marker, and skip the fallback send that
 				// would otherwise post the suppressed marker verbatim.
 				cardBody := fullResponse
+				if cardReopened {
+					cardBody = strings.TrimSpace(cardAnswerText.String())
+				}
 				if isSilent {
 					cardBody = strings.TrimRight(cardAnswerText.String(), " \t\r\n")
 				}
