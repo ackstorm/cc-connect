@@ -1309,7 +1309,6 @@ app_secret = "your-feishu-app-secret"
 # base_url = "https://slack-gov.com/api/"  # Optional Slack-compatible Web API root (default https://slack.com/api/),
 #                                          # e.g. GovSlack, a Slack relay or a local mock. Socket Mode follows it.
 #                                          # 可选：兼容 Slack 的 API 根地址（默认 https://slack.com/api/）
-# token_command = "my-cli token"  # Optional: use this command's output as bot_token and app_token (re-run every 5 min)
 
 # Google Chat (uncomment to enable / 取消注释以启用)
 # Uses a registered Google Chat app whose Cloud Pub/Sub connection publishes

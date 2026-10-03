@@ -45,8 +45,7 @@ func (rc replyContext) reactionTS() string {
 type Platform struct {
 	botToken         string
 	appToken         string
-	tokens           *commandToken // set when token_command supplies both tokens
-	baseURL          string        // optional Slack-compatible Web API root; "" = slack-go default
+	baseURL          string // optional Slack-compatible Web API root; "" = slack-go default
 	allowFrom        string
 	sessionScope     string // "user" (default) | "channel" | "thread"
 	client           *slack.Client
@@ -70,16 +69,8 @@ func New(opts map[string]any) (core.Platform, error) {
 	allowFrom, _ := opts["allow_from"].(string)
 	core.CheckAllowFrom("slack", allowFrom)
 	shareSessionInChannel, _ := opts["share_session_in_channel"].(bool)
-	var tokens *commandToken
-	if cmd, _ := opts["token_command"].(string); strings.TrimSpace(cmd) != "" {
-		if botToken != "" || appToken != "" {
-			return nil, fmt.Errorf("slack: token_command replaces bot_token and app_token; set one or the other")
-		}
-		tokens = &commandToken{command: cmd, ttl: 5 * time.Minute}
-		botToken, appToken = tokenPlaceholder, tokenPlaceholder
-	}
 	if botToken == "" || appToken == "" {
-		return nil, fmt.Errorf("slack: bot_token and app_token (or token_command) are required")
+		return nil, fmt.Errorf("slack: bot_token and app_token are required")
 	}
 	baseURL, _ := opts["base_url"].(string)
 	if baseURL = strings.TrimSpace(baseURL); baseURL != "" && !strings.HasSuffix(baseURL, "/") {
@@ -94,7 +85,6 @@ func New(opts map[string]any) (core.Platform, error) {
 	return &Platform{
 		botToken:         botToken,
 		appToken:         appToken,
-		tokens:           tokens,
 		baseURL:          baseURL,
 		allowFrom:        allowFrom,
 		sessionScope:     scope,
@@ -207,11 +197,6 @@ func (p *Platform) newClient() *slack.Client {
 	opts := []slack.Option{slack.OptionAppLevelToken(p.appToken)}
 	if p.baseURL != "" {
 		opts = append(opts, slack.OptionAPIURL(p.baseURL))
-	}
-	if p.tokens != nil {
-		opts = append(opts, slack.OptionHTTPClient(&http.Client{
-			Transport: &tokenTransport{tokens: p.tokens, next: http.DefaultTransport},
-		}))
 	}
 	return slack.New(p.botToken, opts...)
 }
@@ -643,11 +628,7 @@ func (p *Platform) downloadSlackFile(url string) ([]byte, error) {
 	}
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+p.botToken)
-	client := core.HTTPClient
-	if p.tokens != nil {
-		client = &http.Client{Timeout: client.Timeout, Transport: &tokenTransport{tokens: p.tokens, next: http.DefaultTransport}}
-	}
-	resp, err := client.Do(req)
+	resp, err := core.HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%s", core.RedactToken(err.Error(), p.botToken))
 	}
