@@ -379,6 +379,9 @@ func (p *Platform) handleEvent(evt socketmode.Event) {
 		slog.Debug("slack: slash command", "command", cmd.Command, "text", cmd.Text, "user", cmd.UserID)
 		p.handler(p, msg)
 
+	case socketmode.EventTypeInteractive:
+		p.handleInteractive(evt)
+
 	case socketmode.EventTypeConnecting:
 		slog.Debug("slack: connecting...")
 	case socketmode.EventTypeConnected:
