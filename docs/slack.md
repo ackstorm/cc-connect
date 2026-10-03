@@ -196,6 +196,18 @@ app_token = "xapp-..."
 base_url = "https://slack-gov.com/api/"
 ```
 
+### Token from a command (optional)
+
+Instead of `bot_token` and `app_token`, `token_command` runs a shell command and uses its output as
+both tokens. The output is cached for 5 minutes and the command re-run after that, so short-lived
+credentials keep working (useful with a relay that authenticates users by their own token):
+
+```toml
+[projects.platforms.options]
+base_url = "https://relay.example.com/api/"
+token_command = "my-cli token"
+```
+
 ---
 
 ## Step 8: Start cc-connect
