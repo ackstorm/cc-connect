@@ -45,6 +45,7 @@ func (rc replyContext) reactionTS() string {
 type Platform struct {
 	botToken         string
 	appToken         string
+	baseURL          string // optional Slack-compatible Web API root; "" = slack-go default
 	allowFrom        string
 	sessionScope     string // "user" (default) | "channel" | "thread"
 	client           *slack.Client
@@ -71,6 +72,10 @@ func New(opts map[string]any) (core.Platform, error) {
 	if botToken == "" || appToken == "" {
 		return nil, fmt.Errorf("slack: bot_token and app_token are required")
 	}
+	baseURL, _ := opts["base_url"].(string)
+	if baseURL = strings.TrimSpace(baseURL); baseURL != "" && !strings.HasSuffix(baseURL, "/") {
+		baseURL += "/" // slack-go joins endpoint + method name
+	}
 	scope := normalizeSessionScope(opts["session_scope"], shareSessionInChannel)
 	if scope == "thread" {
 		slog.Warn("slack: session_scope=thread gives each Slack thread its own session; " +
@@ -80,6 +85,7 @@ func New(opts map[string]any) (core.Platform, error) {
 	return &Platform{
 		botToken:         botToken,
 		appToken:         appToken,
+		baseURL:          baseURL,
 		allowFrom:        allowFrom,
 		sessionScope:     scope,
 		channelNameCache: make(map[string]string),
@@ -158,9 +164,7 @@ func (p *Platform) Name() string { return "slack" }
 func (p *Platform) Start(handler core.MessageHandler) error {
 	p.handler = handler
 
-	p.client = slack.New(p.botToken,
-		slack.OptionAppLevelToken(p.appToken),
-	)
+	p.client = p.newClient()
 	p.socket = socketmode.New(p.client)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -185,6 +189,16 @@ func (p *Platform) Start(handler core.MessageHandler) error {
 
 	slog.Info("slack: socket mode connected")
 	return nil
+}
+
+// newClient builds the Web API client. Socket Mode opens its connection with
+// apps.connections.open through this client, so base_url covers both.
+func (p *Platform) newClient() *slack.Client {
+	opts := []slack.Option{slack.OptionAppLevelToken(p.appToken)}
+	if p.baseURL != "" {
+		opts = append(opts, slack.OptionAPIURL(p.baseURL))
+	}
+	return slack.New(p.botToken, opts...)
 }
 
 func (p *Platform) handleEvent(evt socketmode.Event) {

@@ -1305,6 +1305,9 @@ app_secret = "your-feishu-app-secret"
 #                         # "thread" (one session per Slack thread — a new top-level message starts
 #                         #  a fresh session, replies in the same thread continue it).
 #                         # 会话粒度："user"(默认) | "channel"(整个频道一个会话) | "thread"(每个 Slack 话题串一个会话)
+# base_url = "https://slack-gov.com/api/"  # Optional Slack-compatible Web API root (default https://slack.com/api/),
+#                                          # e.g. GovSlack, a Slack relay or a local mock. Socket Mode follows it.
+#                                          # 可选：兼容 Slack 的 API 根地址（默认 https://slack.com/api/）
 
 # Google Chat (uncomment to enable / 取消注释以启用)
 # Uses a registered Google Chat app whose Cloud Pub/Sub connection publishes

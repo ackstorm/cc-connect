@@ -182,6 +182,20 @@ app_token = "xapp-xxxxxxx..."
 | Bot Token | `xoxb-` | Bot API authentication |
 | App Token | `xapp-` | Socket Mode connection |
 
+### Custom API endpoint (optional)
+
+Set `base_url` to talk to a Slack-compatible endpoint instead of `https://slack.com/api/`, for
+example GovSlack (`https://slack-gov.com/api/`), a relay that shares one Slack app between users,
+or a local mock for testing. Socket Mode opens its connection through the same endpoint
+(`apps.connections.open`).
+
+```toml
+[projects.platforms.options]
+bot_token = "xoxb-..."
+app_token = "xapp-..."
+base_url = "https://slack-gov.com/api/"
+```
+
 ---
 
 ## Step 8: Start cc-connect

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -348,5 +349,56 @@ func TestDedupKey(t *testing.T) {
 	// the empty string as a duplicate, so such events are never swallowed.
 	if got := dedupKey("C1", ""); got != "" {
 		t.Errorf("dedupKey with empty ts = %q, want empty", got)
+	}
+}
+
+// base_url points the Web API client, and through it Socket Mode's
+// apps.connections.open, at a Slack-compatible endpoint (GovSlack, a relay, a mock).
+func TestBaseURL_RoutesWebAPIAndSocketModeOpen(t *testing.T) {
+	calls := make(chan string, 4)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// slack-go sends the token as a "token" form field on most calls and as a
+		// Bearer header on others; record whichever is present.
+		_ = r.ParseForm()
+		tok := r.PostFormValue("token")
+		if h := r.Header.Get("Authorization"); h != "" {
+			tok = strings.TrimPrefix(h, "Bearer ")
+		}
+		calls <- r.URL.Path + " " + tok
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true,"url":"ws://127.0.0.1:1/socket"}`)
+	}))
+	defer srv.Close()
+
+	for _, base := range []string{srv.URL + "/api/", srv.URL + "/api"} {
+		pl, err := New(map[string]any{"bot_token": "xoxb-test", "app_token": "xapp-test", "base_url": base})
+		if err != nil {
+			t.Fatalf("New(%q): %v", base, err)
+		}
+		p := pl.(*Platform)
+		p.client = p.newClient()
+
+		if _, err := p.client.AuthTest(); err != nil {
+			t.Fatalf("AuthTest via %q: %v", base, err)
+		}
+		if got, want := <-calls, "/api/auth.test xoxb-test"; got != want {
+			t.Errorf("base %q: got %q, want %q", base, got, want)
+		}
+		if _, _, err := p.client.StartSocketModeContext(t.Context()); err != nil {
+			t.Fatalf("apps.connections.open via %q: %v", base, err)
+		}
+		if got, want := <-calls, "/api/apps.connections.open xapp-test"; got != want {
+			t.Errorf("base %q: got %q, want %q", base, got, want)
+		}
+	}
+}
+
+func TestBaseURL_DefaultsToSlack(t *testing.T) {
+	pl, err := New(map[string]any{"bot_token": "xoxb-test", "app_token": "xapp-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pl.(*Platform).baseURL; got != "" {
+		t.Errorf("baseURL = %q, want empty (slack-go default)", got)
 	}
 }
